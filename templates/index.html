@@ -2,20 +2,19 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <title>🔐 Sistema de Alarme</title>
+  <title>🔐 Sistema de Alarme - Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
-    /* ======== ESTILO GLOBAL ======== */
+    /* ======== ESTILO GLOBAL (Dark Theme ) ======== */
     :root {
-      --bg-color: #121212;
-      --card-bg: #1e1e1e;
-      --text-color: #ffffff;
-      --alert-bg: #ff4d4d1a;
-      --alert-border: #ff4d4d;
-      --accent: #ff4d4d;
-      --ok: #00d26a;
+      --bg-color: #1a1a2e; /* Azul escuro */
+      --card-bg: #2c2c4a; /* Azul mais claro para cards */
+      --text-color: #e0e0e0;
+      --alert-color: #ff4d4d; /* Vermelho vibrante */
+      --success-color: #00d26a;
+      --shadow-color: rgba(0, 0, 0, 0.3);
     }
 
     body {
@@ -28,91 +27,122 @@
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
+      padding-bottom: 50px;
+    }
+
+    /* ======== HEADER ======== */
+    .header {
+      width: 100%;
+      padding: 20px 0;
+      text-align: center;
+      background-color: #161628;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      margin-bottom: 30px;
     }
 
     h1 {
-      margin-top: 30px;
-      color: var(--accent);
-      font-weight: 600;
-      letter-spacing: 0.5px;
+      margin: 0;
+      color: var(--alert-color);
+      font-weight: 700;
+      letter-spacing: 1px;
     }
 
     /* ======== STATUS DE CONEXÃO ======== */
     #status {
-      margin-top: 5px;
+      margin-top: 8px;
       font-size: 0.9em;
-      color: var(--ok);
+      font-weight: 600;
+    }
+
+    /* ======== CONTROLES ======== */
+    .controls {
+      margin-bottom: 20px;
+    }
+
+    button {
+      background-color: var(--alert-color);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background-color 0.3s, transform 0.1s;
+      box-shadow: 0 4px 6px var(--shadow-color);
+    }
+
+    button:hover {
+      background-color: #e63946;
+    }
+
+    button:active {
+      transform: translateY(1px);
     }
 
     /* ======== CONTAINER DOS ALERTAS ======== */
     #alertas {
-      margin-top: 25px;
       width: 90%;
-      max-width: 500px;
+      max-width: 600px;
       display: flex;
-      flex-direction: column-reverse;
-      gap: 10px;
+      flex-direction: column;
+      gap: 15px;
     }
 
     .alerta {
-      background-color: var(--alert-bg);
-      border: 1px solid var(--alert-border);
-      border-left: 5px solid var(--alert-border);
-      padding: 14px 18px;
+      background-color: var(--card-bg);
+      border-left: 5px solid var(--alert-color);
+      padding: 15px 20px;
       border-radius: 10px;
-      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
-      transition: transform 0.2s, background-color 0.3s;
-      text-align: left;
-      word-break: break-word;
+      box-shadow: 0 4px 8px var(--shadow-color);
+      transition: transform 0.2s;
+      display: flex;
+      flex-direction: column;
     }
 
     .alerta:hover {
-      transform: translateY(-2px);
-      background-color: #ff4d4d33;
+      transform: translateY(-3px);
     }
 
-    .alerta small {
-      display: block;
-      margin-top: 4px;
-      font-size: 0.8em;
-      color: #bbbbbb;
-    }
-
-    /* ======== BOTÕES ======== */
-    button {
-      background-color: var(--accent);
-      color: white;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 6px;
-      cursor: pointer;
+    .alerta-message {
+      font-size: 1.1em;
       font-weight: 600;
-      margin-top: 15px;
-      transition: opacity 0.3s;
+      margin-bottom: 5px;
+      color: var(--text-color);
     }
 
-    button:hover {
-      opacity: 0.8;
+    .alerta-timestamp {
+      font-size: 0.85em;
+      color: #a0a0a0;
+      font-weight: 300;
     }
 
     /* ======== RESPONSIVIDADE ======== */
-    @media (max-width: 600px) {
+    @media (max-width: 650px) {
+      .header {
+        padding: 15px 0;
+      }
       h1 {
-        font-size: 1.4em;
+        font-size: 1.5em;
+      }
+      #alertas {
+        width: 95%;
       }
       .alerta {
-        padding: 12px;
-        font-size: 0.95em;
+        padding: 12px 15px;
       }
     }
   </style>
 </head>
 
 <body>
-  <h1>🔐 Sistema de Alarme Inteligente</h1>
-  <div id="status">🟢 Conectado ao servidor</div>
+  <div class="header">
+    <h1>🔐 Sistema de Alarme Inteligente</h1>
+    <div id="status">🟢 Conectado ao servidor</div>
+  </div>
 
-  <button onclick="limparAlertas()">🧹 Limpar histórico</button>
+  <div class="controls">
+    <button onclick="limparAlertas()">🧹 Limpar Histórico Visual</button>
+  </div>
 
   <div id="alertas"></div>
 
@@ -121,52 +151,88 @@
     const alertasDiv = document.getElementById('alertas');
     const statusEl = document.getElementById('status');
 
+    // ====== UTILS ======
+    function formatTimestamp(isoString) {
+      if (!isoString || isoString === 'Sem Data') return 'Timestamp Indisponível';
+      try {
+        // Cria um objeto Date a partir da string ISO
+        const date = new Date(isoString);
+        
+        // Opções de formatação para o Brasil
+        const options = {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+          timeZone: 'America/Sao_Paulo' // Define o fuso horário para exibição
+        };
+        
+        return date.toLocaleString('pt-BR', options);
+      } catch (e) {
+        console.error("Erro ao formatar timestamp:", e);
+        return isoString;
+      }
+    }
+
     // ====== CONEXÃO ======
     socket.on('connect', () => {
       statusEl.textContent = "🟢 Conectado ao servidor";
-      statusEl.style.color = "var(--ok)";
+      statusEl.style.color = "var(--success-color)";
     });
 
     socket.on('disconnect', () => {
       statusEl.textContent = "🔴 Desconectado — tentando reconectar...";
-      statusEl.style.color = "var(--accent)";
+      statusEl.style.color = "var(--alert-color)";
     });
 
-    // ====== HISTÓRICO LOCAL ======
-    window.onload = () => {
-      const salvos = JSON.parse(localStorage.getItem('alertas') || '[]');
-      salvos.forEach(addAlerta);
-    };
-
-    function addAlerta(mensagem) {
+    // ====== FUNÇÃO PARA ADICIONAR ALERTA NA TELA ======
+    function addAlerta(data, isNew = true) {
+      const { mensagem, timestamp } = data;
       const card = document.createElement('div');
       card.className = 'alerta';
       card.innerHTML = `
-        ${mensagem}
-        <small>${new Date().toLocaleString()}</small>
+        <div class="alerta-message">🚨 ${mensagem}</div>
+        <div class="alerta-timestamp">Data/Hora: ${formatTimestamp(timestamp)}</div>
       `;
-      alertasDiv.appendChild(card);
-
-      const salvos = JSON.parse(localStorage.getItem('alertas') || '[]');
-      salvos.push(mensagem);
-      localStorage.setItem('alertas', JSON.stringify(salvos.slice(-20)));
+      
+      // Adiciona no topo se for novo (tempo real), ou no final se for histórico
+      if (isNew) {
+        alertasDiv.prepend(card);
+      } else {
+        alertasDiv.appendChild(card);
+      }
     }
 
-    // ====== RECEBIMENTO DE ALERTA ======
+    // ====== CARREGAR HISTÓRICO DO SERVIDOR ======
+    window.onload = () => {
+      fetch('/historico')
+        .then(response => response.json())
+        .then(alertas => {
+          // O histórico vem do mais novo para o mais velho, mas queremos exibir do mais velho para o mais novo
+          // para que os novos alertas em tempo real apareçam no topo.
+          alertas.reverse().forEach(alerta => addAlerta(alerta, false));
+        })
+        .catch(error => console.error('Erro ao carregar histórico:', error));
+    };
+
+    // ====== RECEBIMENTO DE ALERTA (Tempo Real) ======
     socket.on('alerta', (data) => {
-      addAlerta(data.mensagem);
+      addAlerta(data, true);
       tocarAlerta();
     });
 
-    // ====== LIMPAR HISTÓRICO ======
+    // ====== LIMPAR HISTÓRICO VISUAL ======
     function limparAlertas() {
-      localStorage.removeItem('alertas');
       alertasDiv.innerHTML = '';
+      // O banco de dados (SQLite) no servidor permanece intacto.
     }
 
     // ====== SOM DE ALERTA ======
     function tocarAlerta() {
-      const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+      const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg" );
       beep.play().catch(() => {}); // ignora bloqueio automático de áudio
     }
   </script>

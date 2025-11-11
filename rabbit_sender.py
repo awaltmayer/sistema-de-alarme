@@ -1,5 +1,7 @@
 import serial
+import os
 import pika
+import json
 import requests
 import time
 from datetime import datetime
@@ -10,16 +12,16 @@ import pytz
 # ==========================================
 
 # Porta serial do Arduino (ajuste conforme necessário)
-SERIAL_PORT = '/dev/ttyACM0'  # ou '/dev/ttyUSB0'
-BAUD_RATE = 9600
+SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyACM0')
+BAUD_RATE = int(os.getenv('BAUD_RATE', 9600))
 
 # Configuração RabbitMQ
-RABBITMQ_HOST = 'localhost'
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 QUEUE_NAME = 'alarme'
 
 # Configuração do Telegram
-TOKEN = '8542390575:AAGDZBJkMlG_3GrHknln536TiCNteWTbEfA'
-CHAT_ID = '6791074263'
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 # Fuso horário (Brasil)
 TZ = pytz.timezone("America/Sao_Paulo")
@@ -33,7 +35,7 @@ try:
     arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
     print(f"✅ Conectado ao Arduino em {SERIAL_PORT}")
 except serial.SerialException:
-    print("❌ Erro ao conectar na porta serial. Verifique o cabo e a porta.")
+    print(f"❌ Erro ao conectar na porta serial '{SERIAL_PORT}'. Verifique o cabo e a porta.")
     exit(1)
 
 # Conecta ao RabbitMQ
@@ -60,23 +62,33 @@ while True:
             # Verifica se contém palavra-chave de alerta
             if "ALERTA" in msg:
                 # Data e hora local formatada
-                horario = datetime.now(TZ).strftime("%d/%m/%Y %H:%M:%S")
-                mensagem = f"🚨 ALERTA ({horario}): {msg}"
+                # Timestamp em formato ISO para fácil parseamento no backend
+                timestamp_iso = datetime.now(TZ).isoformat()
+                horario_formatado = datetime.now(TZ).strftime("%d/%m/%Y %H:%M:%S")
+                mensagem_telegram = f"🚨 ALERTA ({horario_formatado}): {msg}"
+                
+                # Objeto estruturado para o RabbitMQ
+                payload = {
+                    "mensagem": msg,
+                    "timestamp": timestamp_iso,
+                    "horario_formatado": horario_formatado
+                }
+                payload_json = json.dumps(payload)
 
                 # Envia ao RabbitMQ
                 channel.basic_publish(
                     exchange='',
                     routing_key=QUEUE_NAME,
-                    body=mensagem
+                    body=payload_json
                 )
-                print(f"📩 Enviado ao RabbitMQ: {mensagem}")
+                print(f"📩 Enviado ao RabbitMQ: {payload_json}")
 
                 # Envia mensagem ao Telegram
                 url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-                payload = {"chat_id": CHAT_ID, "text": mensagem}
+                payload_telegram = {"chat_id": CHAT_ID, "text": mensagem_telegram}
 
                 try:
-                    response = requests.post(url, data=payload)
+                    response = requests.post(url, data=payload_telegram )
                     if response.status_code == 200:
                         print("📲 Mensagem enviada com sucesso no Telegram!")
                     else:
