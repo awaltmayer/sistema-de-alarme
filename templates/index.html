@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>🔐 Sistema de Alarme</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    /* ======== ESTILO GLOBAL ======== */
+    :root {
+      --bg-color: #121212;
+      --card-bg: #1e1e1e;
+      --text-color: #ffffff;
+      --alert-bg: #ff4d4d1a;
+      --alert-border: #ff4d4d;
+      --accent: #ff4d4d;
+      --ok: #00d26a;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    h1 {
+      margin-top: 30px;
+      color: var(--accent);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    /* ======== STATUS DE CONEXÃO ======== */
+    #status {
+      margin-top: 5px;
+      font-size: 0.9em;
+      color: var(--ok);
+    }
+
+    /* ======== CONTAINER DOS ALERTAS ======== */
+    #alertas {
+      margin-top: 25px;
+      width: 90%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 10px;
+    }
+
+    .alerta {
+      background-color: var(--alert-bg);
+      border: 1px solid var(--alert-border);
+      border-left: 5px solid var(--alert-border);
+      padding: 14px 18px;
+      border-radius: 10px;
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
+      transition: transform 0.2s, background-color 0.3s;
+      text-align: left;
+      word-break: break-word;
+    }
+
+    .alerta:hover {
+      transform: translateY(-2px);
+      background-color: #ff4d4d33;
+    }
+
+    .alerta small {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.8em;
+      color: #bbbbbb;
+    }
+
+    /* ======== BOTÕES ======== */
+    button {
+      background-color: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-top: 15px;
+      transition: opacity 0.3s;
+    }
+
+    button:hover {
+      opacity: 0.8;
+    }
+
+    /* ======== RESPONSIVIDADE ======== */
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.4em;
+      }
+      .alerta {
+        padding: 12px;
+        font-size: 0.95em;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>🔐 Sistema de Alarme Inteligente</h1>
+  <div id="status">🟢 Conectado ao servidor</div>
+
+  <button onclick="limparAlertas()">🧹 Limpar histórico</button>
+
+  <div id="alertas"></div>
+
+  <script>
+    const socket = io();
+    const alertasDiv = document.getElementById('alertas');
+    const statusEl = document.getElementById('status');
+
+    // ====== CONEXÃO ======
+    socket.on('connect', () => {
+      statusEl.textContent = "🟢 Conectado ao servidor";
+      statusEl.style.color = "var(--ok)";
+    });
+
+    socket.on('disconnect', () => {
+      statusEl.textContent = "🔴 Desconectado — tentando reconectar...";
+      statusEl.style.color = "var(--accent)";
+    });
+
+    // ====== HISTÓRICO LOCAL ======
+    window.onload = () => {
+      const salvos = JSON.parse(localStorage.getItem('alertas') || '[]');
+      salvos.forEach(addAlerta);
+    };
+
+    function addAlerta(mensagem) {
+      const card = document.createElement('div');
+      card.className = 'alerta';
+      card.innerHTML = `
+        ${mensagem}
+        <small>${new Date().toLocaleString()}</small>
+      `;
+      alertasDiv.appendChild(card);
+
+      const salvos = JSON.parse(localStorage.getItem('alertas') || '[]');
+      salvos.push(mensagem);
+      localStorage.setItem('alertas', JSON.stringify(salvos.slice(-20)));
+    }
+
+    // ====== RECEBIMENTO DE ALERTA ======
+    socket.on('alerta', (data) => {
+      addAlerta(data.mensagem);
+      tocarAlerta();
+    });
+
+    // ====== LIMPAR HISTÓRICO ======
+    function limparAlertas() {
+      localStorage.removeItem('alertas');
+      alertasDiv.innerHTML = '';
+    }
+
+    // ====== SOM DE ALERTA ======
+    function tocarAlerta() {
+      const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+      beep.play().catch(() => {}); // ignora bloqueio automático de áudio
+    }
+  </script>
+</body>
+</html>
