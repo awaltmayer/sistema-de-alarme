@@ -1,62 +1,73 @@
-from flask import Flask, render_template, jsonify
-from flask_socketio import SocketIO
-import pika, threading, sqlite3, json
+from flask import Flask, render_template, jsonify, request
+from flask_socketio import SocketIO, emit
+import sqlite3
+from datetime import datetime
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Banco SQLite
-conn = sqlite3.connect('alertas.db', check_same_thread=False)
-c = conn.cursor()
-# Tabela atualizada para incluir a coluna 'timestamp'
-c.execute('CREATE TABLE IF NOT EXISTS alertas (id INTEGER PRIMARY KEY, mensagem TEXT, timestamp TEXT)')
-conn.commit()
+# --- Função para inicializar o banco de dados ---
+def init_db():
+    conn = sqlite3.connect('alertas.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS alertas
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  mensagem TEXT,
+                  data TEXT,
+                  hora TEXT)''')
+    conn.commit()
+    conn.close()
 
+init_db()
+
+# --- Página principal ---
 @app.route('/')
 def index():
     return render_template('index.html')
 
+# --- Rota para receber e emitir alertas ---
+@app.route('/alerta', methods=['POST'])
+def alerta():
+    data = request.get_json()
+    mensagem = data.get('mensagem', '🚨 Alerta recebido!')
+
+    # Data e hora atuais
+    agora = datetime.now()
+    data_str = agora.strftime("%Y-%m-%d")
+    hora_str = agora.strftime("%H:%M:%S")
+
+    # Salva no banco
+    conn = sqlite3.connect('alertas.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO alertas (mensagem, data, hora) VALUES (?, ?, ?)",
+              (mensagem, data_str, hora_str))
+    conn.commit()
+    conn.close()
+
+    # Emite via Socket.IO
+    socketio.emit('alerta', {'mensagem': mensagem, 'data': data_str, 'hora': hora_str})
+
+    return jsonify({'status': 'ok', 'mensagem': mensagem})
+
+# --- Rota para buscar histórico ---
 @app.route('/historico')
 def historico():
-    # Retorna a mensagem e o timestamp
-    c.execute('SELECT mensagem, timestamp FROM alertas ORDER BY id DESC LIMIT 20')
-    alertas = [{'mensagem': row[0], 'timestamp': row[1]} for row in c.fetchall()]
-    return jsonify(alertas)
+    conn = sqlite3.connect('alertas.db')
+    c = conn.cursor()
+    c.execute("SELECT mensagem, data, hora FROM alertas ORDER BY id DESC")
+    dados = [{'mensagem': m, 'data': d, 'hora': h} for (m, d, h) in c.fetchall()]
+    conn.close()
+    return jsonify(dados)
 
-def consume():
-    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-    channel = connection.channel()
-    channel.queue_declare(queue='alarme')
-
-    def callback(ch, method, properties, body):
-        try:
-            # Decodifica o payload JSON
-            payload = json.loads(body.decode())
-            msg = payload.get('mensagem', 'Alerta sem mensagem')
-            timestamp = payload.get('timestamp', 'Sem Data')
-            
-            print(f"🔔 Recebido: {msg} em {timestamp}")
-            
-            # Salva no SQLite
-            c.execute("INSERT INTO alertas (mensagem, timestamp) VALUES (?, ?)", (msg, timestamp))
-            conn.commit()
-            
-            # Emite via SocketIO
-            socketio.emit('alerta', {'mensagem': msg, 'timestamp': timestamp})
-            
-        except json.JSONDecodeError:
-            print(f"⚠️ Erro ao decodificar JSON do RabbitMQ: {body.decode()}")
-            # Trata como mensagem simples se não for JSON
-            msg = body.decode()
-            c.execute("INSERT INTO alertas (mensagem, timestamp) VALUES (?, ?)", (msg, 'Sem Data'))
-            conn.commit()
-            socketio.emit('alerta', {'mensagem': msg, 'timestamp': 'Sem Data'})
-
-    channel.basic_consume(queue='alarme', on_message_callback=callback, auto_ack=True)
-    channel.start_consuming()
-
-# Thread separada para o consumidor
-threading.Thread(target=consume, daemon=True).start()
+# --- Rota para limpar histórico ---
+@app.route('/limpar', methods=['POST'])
+def limpar():
+    conn = sqlite3.connect('alertas.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM alertas")
+    conn.commit()
+    conn.close()
+    return jsonify({'mensagem': '✅ Histórico apagado com sucesso!'})
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

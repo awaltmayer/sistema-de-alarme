@@ -1,115 +1,104 @@
 import serial
-import os
-import pika
-import json
-import requests
 import time
+import sqlite3
+import pika
+import requests
 from datetime import datetime
-import pytz
 
-# ==========================================
-# 🔧 CONFIGURAÇÕES
-# ==========================================
+# ==============================
+# ⚙️ CONFIGURAÇÕES
+# ==============================
+PORTA_SERIAL = "/dev/ttyACM0"   # ou /dev/ttyUSB0 dependendo da placa
+BAUD_RATE = 9600
+RABBITMQ_SERVER = "localhost"
 
-# Porta serial do Arduino (ajuste conforme necessário)
-SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyACM0')
-BAUD_RATE = int(os.getenv('BAUD_RATE', 9600))
+# 🧩 Telegram (preencher manualmente)
+TELEGRAM_TOKEN = "8542390575:AAGDZBJkMlG_3GrHknln536TiCNteWTbEfA"
+CHAT_ID = "6791074263"
 
-# Configuração RabbitMQ
-RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
-QUEUE_NAME = 'alarme'
+# ==============================
+# 🔌 CONEXÕES
+# ==============================
+print("Conectando ao Arduino...")
+arduino = serial.Serial(PORTA_SERIAL, BAUD_RATE)
+time.sleep(2)
+print("✅ Conectado ao Arduino!")
 
-# Configuração do Telegram
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-
-# Fuso horário (Brasil)
-TZ = pytz.timezone("America/Sao_Paulo")
-
-# ==========================================
-# ⚙️ INICIALIZAÇÃO DAS CONEXÕES
-# ==========================================
-
-# Conecta ao Arduino
+# Conexão com RabbitMQ
 try:
-    arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    print(f"✅ Conectado ao Arduino em {SERIAL_PORT}")
-except serial.SerialException:
-    print(f"❌ Erro ao conectar na porta serial '{SERIAL_PORT}'. Verifique o cabo e a porta.")
-    exit(1)
-
-# Conecta ao RabbitMQ
-try:
-    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_SERVER))
     channel = connection.channel()
-    channel.queue_declare(queue=QUEUE_NAME)
-    print(f"✅ Conectado ao RabbitMQ em '{RABBITMQ_HOST}'")
+    channel.queue_declare(queue='movimentos')  # deve ser o mesmo nome da fila no app_flask.py
+    print("✅ Conectado ao RabbitMQ!")
 except Exception as e:
     print(f"❌ Erro ao conectar ao RabbitMQ: {e}")
-    exit(1)
+    exit()
 
-print("\n📡 Aguardando mensagens do Arduino...\n")
+# ==============================
+# 🧠 FUNÇÕES
+# ==============================
+def salvar_alerta():
+    """Salva o alerta no banco, envia ao RabbitMQ e Telegram."""
+    data = datetime.now().strftime("%Y-%m-%d")
+    hora = datetime.now().strftime("%H:%M:%S")
+    msg = f"🚨 Movimento detectado!\n📅 {data}\n🕓 {hora}"
 
-# ==========================================
-# 🚨 LOOP PRINCIPAL
-# ==========================================
+    # --- salvar no banco local ---
+    try:
+        conn = sqlite3.connect("alertas.db")
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS alertas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data TEXT NOT NULL,
+                hora TEXT NOT NULL
+            )
+        """)
+        c.execute("INSERT INTO alertas (data, hora) VALUES (?, ?)", (data, hora))
+        conn.commit()
+        conn.close()
+        print(f"💾 Alerta salvo no banco ({data} {hora})")
+    except Exception as e:
+        print(f"⚠ Erro ao salvar no banco: {e}")
 
+    # --- envia mensagem pro RabbitMQ ---
+    try:
+        channel.basic_publish(exchange='', routing_key='movimentos', body=msg)
+        print(f"📩 Enviado ao RabbitMQ: {msg}")
+    except Exception as e:
+        print(f"⚠ Erro ao enviar ao RabbitMQ: {e}")
+
+    # --- envia mensagem ao Telegram ---
+    enviar_telegram(msg)
+
+
+def enviar_telegram(msg):
+    """Envia notificação via Telegram."""
+    url = f"https://api.telegram.org/bot8542390575:AAGDZBJkMlG_3GrHknln536TiCNteWTbEfA/sendMessage"
+    data = {"chat_id": 6791074263, "text": msg}
+    try:
+        resposta = requests.post(url, data=data)
+        if resposta.status_code == 200:
+            print("✅ Mensagem enviada ao Telegram!")
+        else:
+            print(f"⚠ Erro Telegram: {resposta.text}")
+    except Exception as e:
+        print(f"⚠ Erro ao enviar Telegram: {e}")
+
+# ==============================
+# 🕵️ LOOP PRINCIPAL
+# ==============================
+print("🕵️ Monitorando sensor...")
 while True:
     try:
         if arduino.in_waiting > 0:
-            msg = arduino.readline().decode(errors="ignore").strip()
-
-            # Verifica se contém palavra-chave de alerta
-            if "ALERTA" in msg:
-                # Data e hora local formatada
-                # Timestamp em formato ISO para fácil parseamento no backend
-                timestamp_iso = datetime.now(TZ).isoformat()
-                horario_formatado = datetime.now(TZ).strftime("%d/%m/%Y %H:%M:%S")
-                mensagem_telegram = f"🚨 ALERTA ({horario_formatado}): {msg}"
-                
-                # Objeto estruturado para o RabbitMQ
-                payload = {
-                    "mensagem": msg,
-                    "timestamp": timestamp_iso,
-                    "horario_formatado": horario_formatado
-                }
-                payload_json = json.dumps(payload)
-
-                # Envia ao RabbitMQ
-                channel.basic_publish(
-                    exchange='',
-                    routing_key=QUEUE_NAME,
-                    body=payload_json
-                )
-                print(f"📩 Enviado ao RabbitMQ: {payload_json}")
-
-                # Envia mensagem ao Telegram
-                url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-                payload_telegram = {"chat_id": CHAT_ID, "text": mensagem_telegram}
-
-                try:
-                    response = requests.post(url, data=payload_telegram )
-                    if response.status_code == 200:
-                        print("📲 Mensagem enviada com sucesso no Telegram!")
-                    else:
-                        print(f"⚠️ Falha ao enviar no Telegram (status {response.status_code})")
-                except requests.RequestException as e:
-                    print(f"❌ Erro ao enviar para o Telegram: {e}")
-
-            time.sleep(0.1)  # Evita sobrecarga do loop
-
+            valor = arduino.readline().decode().strip()
+            if valor == "1":
+                salvar_alerta()
+                time.sleep(5)  # evita spam de mensagens
     except KeyboardInterrupt:
-        print("\n🛑 Execução interrompida pelo usuário.")
+        print("\n🛑 Encerrado pelo usuário.")
         break
-
     except Exception as e:
-        print(f"⚠️ Erro inesperado: {e}")
-        time.sleep(1)
-
-# ==========================================
-# 🔚 ENCERRAMENTO LIMPO
-# ==========================================
-
-arduino.close()
-connection.close()
-print("✅ Conexões encerradas com segurança.")
+        print(f"⚠ Erro no loop: {e}")
+        time.sleep(2)
